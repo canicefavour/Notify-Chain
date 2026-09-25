@@ -394,6 +394,36 @@ Add this to `.vscode/settings.json`:
 
 ---
 
+### Testing
+
+NotifyChain includes comprehensive testing infrastructure:
+
+#### Smoke Tests (Fast Pipeline Validation)
+
+```bash
+cd listener
+npm install
+npm run test:smoke
+```
+
+The smoke test validates the complete notification pipeline from event ingestion to notification generation in <2 seconds without any external dependencies. See `listener/SMOKE_TEST.md` for details.
+
+#### Unit Tests
+
+```bash
+cd listener
+npm run test:unit
+```
+
+#### All Tests
+
+```bash
+cd listener
+npm run test:all
+```
+
+---
+
 ## Developer Tools
 
 ### Configuration Drift Detection
