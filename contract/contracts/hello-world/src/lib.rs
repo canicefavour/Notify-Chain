@@ -256,4 +256,7 @@ mod tests {
 
     #[path = "../tests/test_utils_test.rs"]
     mod test_utils_test;
+
+    #[path = "../tests/event_regression_test.rs"]
+    mod event_regression_test;
 }
