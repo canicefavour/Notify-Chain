@@ -30,6 +30,7 @@ import { useTheme } from './hooks/useTheme';
 import { DeliveryHeatmap } from './components/DeliveryHeatmap';
 import { useEventStore } from './store/eventStore';
 import { SyncStatus } from './components/SyncStatus';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 type Tab = 'explorer' | 'preferences';
 
@@ -389,40 +390,73 @@ function renderPanel(tab: Tab, events: any[]) {
   switch (tab) {
     case 'explorer':
       return (
-        <>
-          <EventExplorerPage />
-          <DeliveryHeatmap events={events} />
-        </>
-      )}
-      {tab === 'timeline' && <NotificationTimelineView />}
-      {tab === 'activity' && <ActivityFeed />}
-      {tab === 'webhooks' && <WebhookDashboardPage />}
-      {tab === 'export-history' && <ExportHistoryPage />}
-      {tab === 'search' && <NotificationSearchPage />}
-      {tab === 'preferences' && <NotificationPreferencesPage />}
-      {tab === 'templates' && <TemplatesPage />}
-      {tab === 'channels' && <ChannelDetailsPage />}
-    </div>
-  );
+        <ErrorBoundary section="Event Explorer">
+          <>
+            <EventExplorerPage />
+            <DeliveryHeatmap events={events} />
+          </>
+        </ErrorBoundary>
       );
     case 'timeline':
-      return <NotificationTimelineView />;
+      return (
+        <ErrorBoundary section="Delivery Timeline">
+          <NotificationTimelineView />
+        </ErrorBoundary>
+      );
     case 'activity':
-      return <ActivityFeed />;
+      return (
+        <ErrorBoundary section="Activity Feed">
+          <ActivityFeed />
+        </ErrorBoundary>
+      );
     case 'user-activity':
-      return <UserActivityTimeline />;
+      return (
+        <ErrorBoundary section="User Activity">
+          <UserActivityTimeline />
+        </ErrorBoundary>
+      );
     case 'retry-stats':
-      return <RetryStatisticsPanel />;
+      return (
+        <ErrorBoundary section="Retry Statistics">
+          <RetryStatisticsPanel />
+        </ErrorBoundary>
+      );
     case 'webhooks':
-      return <WebhookDashboardPage />;
+      return (
+        <ErrorBoundary section="Webhook Performance">
+          <WebhookDashboardPage />
+        </ErrorBoundary>
+      );
     case 'export-history':
-      return <ExportHistoryPage />;
+      return (
+        <ErrorBoundary section="Export History">
+          <ExportHistoryPage />
+        </ErrorBoundary>
+      );
     case 'search':
-      return <NotificationSearchPage />;
+      return (
+        <ErrorBoundary section="Notification Search">
+          <NotificationSearchPage />
+        </ErrorBoundary>
+      );
     case 'preferences':
-      return <NotificationPreferencesPage />;
+      return (
+        <ErrorBoundary section="Notification Preferences">
+          <NotificationPreferencesPage />
+        </ErrorBoundary>
+      );
     case 'templates':
-      return <TemplatesPage />;
+      return (
+        <ErrorBoundary section="Templates">
+          <TemplatesPage />
+        </ErrorBoundary>
+      );
+    case 'channels':
+      return (
+        <ErrorBoundary section="Channel Details">
+          <ChannelDetailsPage />
+        </ErrorBoundary>
+      );
     default:
       return null;
   }
