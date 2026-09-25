@@ -603,6 +603,29 @@ fn test_add_group_member_success() {
 }
 
 #[test]
+#[should_panic] // Unauthorized
+fn test_add_group_member_unauthorized() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+
+    let creator = test_env.users.get(0).unwrap().clone();
+    let id = BytesN::from_array(&test_env.env, &[1u8; 32]);
+    let name = String::from_str(&test_env.env, "Unauthorized Add Test");
+
+    let mut members = Vec::new(&test_env.env);
+    members.push_back(GroupMember {
+        address: Address::generate(&test_env.env),
+        percentage: 100,
+    });
+
+    create_helper(&client, &id, &name, &creator, &members, &test_env);
+
+    let other_user = Address::generate(&test_env.env);
+    let member_to_add = Address::generate(&test_env.env);
+    client.add_group_member(&id, &other_user, &member_to_add, &50);
+}
+
+#[test]
 #[should_panic] // AlreadyExists
 fn test_add_duplicate_member() {
     let test_env = setup_test_env();
@@ -622,7 +645,7 @@ fn test_add_duplicate_member() {
     create_helper(&client, &id, &name, &creator, &members, &test_env);
 
     // Try to add the same member again - should fail
-    client.add_group_member(&id, &member1, &50);
+    client.add_group_member(&id, &creator, &member1, &50);
 }
 
 #[test]
@@ -631,10 +654,11 @@ fn test_add_member_to_non_existent_group() {
     let test_env = setup_test_env();
     let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
 
+    let creator = test_env.users.get(0).unwrap().clone();
     let id = BytesN::from_array(&test_env.env, &[99u8; 32]);
     let member = Address::generate(&test_env.env);
 
-    client.add_group_member(&id, &member, &50);
+    client.add_group_member(&id, &creator, &member, &50);
 }
 
 #[test]
@@ -659,7 +683,7 @@ fn test_add_member_invalid_total_percentage() {
 
     // Try to add another member with 50% (total would be 150%) - should fail
     let member2 = Address::generate(&test_env.env);
-    client.add_group_member(&id, &member2, &50);
+    client.add_group_member(&id, &creator, &member2, &50);
 }
 
 #[test]
@@ -1057,6 +1081,21 @@ fn test_is_group_active_on_nonexistent_group_fails() {
 }
 
 #[test]
+fn test_create_group_with_zero_usages_fails() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+
+    let creator = test_env.users.get(0).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+    let id = BytesN::from_array(&test_env.env, &[1u8; 32]);
+    let name = String::from_str(&test_env.env, "Zero Usages");
+
+    crate::test_utils::mint_tokens(&test_env.env, &token, &creator, 10_000_000);
+    let result = client.try_create(&id, &name, &creator, &0u32, &token);
+    assert!(result.is_err(), "Creating group with 0 usages should fail");
+}
+
+#[test]
 fn test_get_all_groups_includes_inactive() {
     let test_env = setup_test_env();
     let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
@@ -1449,6 +1488,241 @@ fn test_admin_functions_after_transfer() {
     assert_eq!(recipient_balance, 500);
 }
 
+// =====================
+// Failure Scenario Tests
+// =====================
+
+#[test]
+#[should_panic]
+fn test_create_fails_name_too_long() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+
+    let creator = test_env.users.get(0).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+    let id = BytesN::from_array(&test_env.env, &[1u8; 32]);
+
+    // Create a very long name (over 100 characters)
+    let long_name = String::from_str(&test_env.env, "a".repeat(101).as_str());
+
+    crate::test_utils::mint_tokens(&test_env.env, &token, &creator, 10000000);
+    client.create(&id, &long_name, &creator, &10u32, &token);
+}
+
+#[test]
+#[should_panic]
+fn test_create_fails_invalid_usage_count_zero() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+
+    let creator = test_env.users.get(0).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+    let id = BytesN::from_array(&test_env.env, &[1u8; 32]);
+    let name = String::from_str(&test_env.env, "Test Group");
+
+    crate::test_utils::mint_tokens(&test_env.env, &token, &creator, 10000000);
+    client.create(&id, &name, &creator, &0u32, &token);
+}
+
+#[test]
+#[should_panic]
+fn test_create_fails_unsupported_token() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+
+    let creator = test_env.users.get(0).unwrap().clone();
+    let id = BytesN::from_array(&test_env.env, &[1u8; 32]);
+    let name = String::from_str(&test_env.env, "Test Group");
+
+    // Create an unsupported token (not added to supported tokens)
+    let unsupported_token = crate::test_utils::deploy_mock_token(
+        &test_env.env,
+        &String::from_str(&test_env.env, "Unsupported"),
+        &String::from_str(&test_env.env, "UNSUP"),
+    );
+
+    crate::test_utils::mint_tokens(&test_env.env, &unsupported_token, &creator, 10000000);
+    client.create(&id, &name, &creator, &10u32, &unsupported_token);
+}
+
+#[test]
+#[should_panic]
+fn test_topup_fails_invalid_usage_count_zero() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+
+    let creator = test_env.users.get(0).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+    let id = BytesN::from_array(&test_env.env, &[1u8; 32]);
+
+    let members = Vec::new(&test_env.env);
+    create_test_group(
+        &test_env.env,
+        &test_env.autoshare_contract,
+        &creator,
+        &members,
+        10,
+        &token,
+    );
+
+    client.topup_subscription(&id, &0u32, &token, &creator);
+}
+
+#[test]
+#[should_panic]
+fn test_topup_fails_unsupported_token() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+
+    let creator = test_env.users.get(0).unwrap().clone();
+    let supported_token = test_env.mock_tokens.get(0).unwrap().clone();
+    let id = BytesN::from_array(&test_env.env, &[1u8; 32]);
+
+    let members = Vec::new(&test_env.env);
+    create_test_group(
+        &test_env.env,
+        &test_env.autoshare_contract,
+        &creator,
+        &members,
+        10,
+        &supported_token,
+    );
+
+    // Create an unsupported token
+    let unsupported_token = crate::test_utils::deploy_mock_token(
+        &test_env.env,
+        &String::from_str(&test_env.env, "Unsupported"),
+        &String::from_str(&test_env.env, "UNSUP"),
+    );
+
+    crate::test_utils::mint_tokens(&test_env.env, &unsupported_token, &creator, 10000000);
+    client.topup_subscription(&id, &10u32, &unsupported_token, &creator);
+}
+
+#[test]
+#[should_panic]
+fn test_reduce_usage_fails_no_usages_remaining() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+
+    let creator = test_env.users.get(0).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+    let id = BytesN::from_array(&test_env.env, &[1u8; 32]);
+
+    let members = Vec::new(&test_env.env);
+    create_test_group(
+        &test_env.env,
+        &test_env.autoshare_contract,
+        &creator,
+        &members,
+        1,
+        &token,
+    );
+
+    // Reduce once (should work)
+    client.reduce_usage(&id);
+
+    // Reduce again (should panic)
+    client.reduce_usage(&id);
+}
+
+#[test]
+#[should_panic]
+fn test_set_usage_fee_fails_zero() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(AutoShareContract, ());
+    let client = AutoShareContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    client.initialize_admin(&admin);
+
+    client.set_usage_fee(&0u32, &admin);
+}
+
+#[test]
+#[should_panic]
+fn test_add_supported_token_fails_already_exists() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(AutoShareContract, ());
+    let client = AutoShareContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    client.initialize_admin(&admin);
+
+    let token_id = env.register(MockToken, ());
+    let token_client = MockTokenClient::new(&env, &token_id);
+    token_client.initialize(
+        &admin,
+        &7,
+        &String::from_str(&env, "Test Token"),
+        &String::from_str(&env, "TST"),
+    );
+
+    // Add once
+    client.add_supported_token(&token_id, &admin);
+    // Add again (should panic)
+    client.add_supported_token(&token_id, &admin);
+}
+
+#[test]
+#[should_panic]
+fn test_remove_supported_token_fails_not_found() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(AutoShareContract, ());
+    let client = AutoShareContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    client.initialize_admin(&admin);
+
+    let token_id = env.register(MockToken, ());
+    let token_client = MockTokenClient::new(&env, &token_id);
+    token_client.initialize(
+        &admin,
+        &7,
+        &String::from_str(&env, "Test Token"),
+        &String::from_str(&env, "TST"),
+    );
+
+    // Try to remove a token that was never added
+    client.remove_supported_token(&token_id, &admin);
+}
+
+#[test]
+#[should_panic]
+fn test_update_members_fails_too_many() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+
+    let creator = test_env.users.get(0).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+    let id = BytesN::from_array(&test_env.env, &[1u8; 32]);
+
+    // Create group first
+    let initial_members = Vec::new(&test_env.env);
+    create_test_group(
+        &test_env.env,
+        &test_env.autoshare_contract,
+        &creator,
+        &initial_members,
+        10,
+        &token,
+    );
+
+    // Create 51 members (MAX_MEMBERS is 50)
+    let mut too_many_members = Vec::new(&test_env.env);
+    for _ in 0..51 {
+        too_many_members.push_back(GroupMember {
+            address: Address::generate(&test_env.env),
+            percentage: 1, // This will sum to 51, but first check is TooManyMembers
+        });
+    }
+
+    client.update_members(&id, &creator, &too_many_members);
+}
+
 #[test]
 #[should_panic]
 fn test_old_admin_cannot_withdraw_after_transfer() {
@@ -1667,7 +1941,7 @@ fn test_too_many_members_rejected() {
 
     // Build > MAX_MEMBERS (51 members, limit is 50)
     let mut members = Vec::new(&test_env.env);
-    for i in 0..51u32 {
+    for _i in 0..51u32 {
         members.push_back(GroupMember {
             address: Address::generate(&test_env.env),
             percentage: 100 / 51,
@@ -1692,7 +1966,7 @@ fn test_members_at_max_succeeds() {
 
     // Exactly MAX_MEMBERS (50 members, each 2%)
     let mut members = Vec::new(&test_env.env);
-    for i in 0..50u32 {
+    for _i in 0..50u32 {
         members.push_back(GroupMember {
             address: Address::generate(&test_env.env),
             percentage: 2,
@@ -1700,4 +1974,199 @@ fn test_members_at_max_succeeds() {
     }
     // Should NOT panic
     client.update_members(&id, &creator, &members);
+}
+
+// ============================================
+// Channel Subscription Status (is_subscribed)
+// ============================================
+
+#[test]
+fn test_is_subscribed_true_for_creator() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+    let creator = test_env.users.get(0).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+
+    let id = create_test_group(
+        &test_env.env,
+        &test_env.autoshare_contract,
+        &creator,
+        &Vec::new(&test_env.env),
+        1,
+        &token,
+    );
+
+    assert!(client.is_subscribed(&id, &creator));
+}
+
+#[test]
+fn test_is_subscribed_true_for_member() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+    let creator = test_env.users.get(0).unwrap().clone();
+    let member = test_env.users.get(1).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+
+    let mut members = Vec::new(&test_env.env);
+    members.push_back(GroupMember {
+        address: member.clone(),
+        percentage: 100,
+    });
+    let id = create_test_group(
+        &test_env.env,
+        &test_env.autoshare_contract,
+        &creator,
+        &members,
+        1,
+        &token,
+    );
+
+    assert!(client.is_subscribed(&id, &member));
+}
+
+#[test]
+fn test_is_subscribed_false_for_non_member() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+    let creator = test_env.users.get(0).unwrap().clone();
+    let stranger = test_env.users.get(1).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+
+    let id = create_test_group(
+        &test_env.env,
+        &test_env.autoshare_contract,
+        &creator,
+        &Vec::new(&test_env.env),
+        1,
+        &token,
+    );
+
+    assert!(!client.is_subscribed(&id, &stranger));
+}
+
+#[test]
+fn test_is_subscribed_false_after_channel_deactivated() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+    let creator = test_env.users.get(0).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+
+    let id = create_test_group(
+        &test_env.env,
+        &test_env.autoshare_contract,
+        &creator,
+        &Vec::new(&test_env.env),
+        1,
+        &token,
+    );
+    assert!(client.is_subscribed(&id, &creator));
+
+    client.deactivate_group(&id, &creator);
+
+    // The creator is still the creator, but the channel is no longer active,
+    // so it must not be reported as an active subscription.
+    assert!(!client.is_subscribed(&id, &creator));
+}
+
+#[test]
+#[should_panic]
+fn test_is_subscribed_on_nonexistent_channel_fails() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+    let wallet = test_env.users.get(0).unwrap().clone();
+    let id = BytesN::from_array(&test_env.env, &[99u8; 32]);
+
+    client.is_subscribed(&id, &wallet);
+}
+
+// ============================================
+// Admin Channel Deactivation (Issue: admin channel management)
+// ============================================
+
+#[test]
+fn test_admin_can_deactivate_channel_even_if_not_creator() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+    let creator = test_env.users.get(0).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+
+    let id = create_test_group(
+        &test_env.env,
+        &test_env.autoshare_contract,
+        &creator,
+        &Vec::new(&test_env.env),
+        1,
+        &token,
+    );
+
+    // The admin is neither the creator nor a member, yet can deactivate.
+    client.deactivate_group(&id, &test_env.admin);
+
+    assert!(!client.is_group_active(&id));
+}
+
+#[test]
+fn test_deactivated_channel_blocks_new_subscriptions() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+    let creator = test_env.users.get(0).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+
+    let id = create_test_group(
+        &test_env.env,
+        &test_env.autoshare_contract,
+        &creator,
+        &Vec::new(&test_env.env),
+        1,
+        &token,
+    );
+
+    client.deactivate_group(&id, &creator);
+    crate::test_utils::mint_tokens(&test_env.env, &token, &creator, 10_000);
+
+    let result = client.try_topup_subscription(&id, &10u32, &token, &creator);
+    assert!(
+        result.is_err(),
+        "topping up (a new subscription) on a deactivated channel must be rejected"
+    );
+}
+
+#[test]
+fn test_deactivated_channel_preserves_historical_subscription_data() {
+    let test_env = setup_test_env();
+    let client = AutoShareContractClient::new(&test_env.env, &test_env.autoshare_contract);
+    let creator = test_env.users.get(0).unwrap().clone();
+    let member = test_env.users.get(1).unwrap().clone();
+    let token = test_env.mock_tokens.get(0).unwrap().clone();
+
+    let mut members = Vec::new(&test_env.env);
+    members.push_back(GroupMember {
+        address: member.clone(),
+        percentage: 100,
+    });
+    let id = create_test_group(
+        &test_env.env,
+        &test_env.autoshare_contract,
+        &creator,
+        &members,
+        1,
+        &token,
+    );
+
+    // Top up before deactivation to create payment history.
+    crate::test_utils::mint_tokens(&test_env.env, &token, &creator, 10_000);
+    client.topup_subscription(&id, &5u32, &token, &creator);
+
+    client.deactivate_group(&id, &creator);
+
+    // Existing subscription data (members, payment history) remains visible.
+    let stored_members = client.get_group_members(&id);
+    assert_eq!(stored_members.len(), 1);
+    assert_eq!(stored_members.get(0).unwrap().address, member);
+
+    let history = client.get_group_payment_history(&id);
+    assert!(
+        !history.is_empty(),
+        "historical payment/subscription records must remain visible after deactivation"
+    );
 }
